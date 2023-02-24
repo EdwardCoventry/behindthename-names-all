@@ -149,5 +149,5 @@ def main(f):
 
 if __name__ == "__main__":
 
-    with open('variantstonames.csv', 'w', encoding='utf-8') as f:
+    with open('variantstooriginals.csv.csv', 'w', encoding='utf-8') as f:
         main(f)
