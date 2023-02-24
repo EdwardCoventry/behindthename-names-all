@@ -6,6 +6,7 @@ import logging
 import os
 import sys
 from typing import Optional, List, Iterable
+import regex as re
 
 import attr
 from bs4 import BeautifulSoup, SoupStrainer
@@ -83,15 +84,45 @@ def scrape_names_results(text: str) -> Iterable[Name]:
     )
     return map(Name.from_listing, soup)
 
+def clean_name(name):
+    name = re.sub("\d+", "", name)
+    name = re.sub("[ ]+", " ", name)
+    name = name.strip()
+    name = name.rstrip('.,)!?')
+    return name
 
-def scrape(base_url: str):
+def yield_scrape_pairs(base_url: str):
     names = BehindTheNamesSite(base_url).scrape_all_names()
-    writer = csv.DictWriter(
-        sys.stdout, ["text", "description", "usage"], quoting=csv.QUOTE_ALL
-    )
-    writer.writeheader()
+
     for name in names:
-        writer.writerow(attr.asdict(name))
+
+        if unvariant_match := re.search('variant of (.*)', name.description, flags=re.IGNORECASE):
+
+            # variant_name = clean_name(name.text)
+            # original_name = clean_name(unvariant_match.group(1))
+
+            variant_name = clean_name(name.text)
+            original_name = clean_name(unvariant_match.group(1).split()[0])
+
+            if not original_name[0].isupper():
+                continue
+
+            if ',' in variant_name+original_name:
+                continue
+
+            # add eg Edvaard -> Edward or Edvard
+            if (or_match := re.match('([^\s]+) or ([^\s]+)', unvariant_match.group(1).strip())) \
+                    and all(or_match.group(x)[0].isupper() for x in (1, 2)):
+                for x in (1, 2):
+                    yield variant_name, clean_name(or_match.group(x))
+            else:
+                yield variant_name, original_name
+
+def write_scrape(base_url: str, f):
+
+    for variant, original in yield_scrape_pairs(base_url):
+        if variant != original:
+            f.write(f"{variant},{original}\n")
 
 
 def main_parser():
@@ -108,13 +139,15 @@ def main_parser():
     return parser
 
 
-def main():
+def main(f):
     parser = main_parser()
     args = parser.parse_args()
     root_logger.setLevel(logging.INFO)
     _log.setLevel(logging.INFO)
-    return scrape(BASE_URLS[NameKind(args.kind)])
+    return write_scrape(BASE_URLS[NameKind(args.kind)], f)
 
 
 if __name__ == "__main__":
-    main()
+
+    with open('variantstonames.csv', 'w', encoding='utf-8') as f:
+        main(f)
